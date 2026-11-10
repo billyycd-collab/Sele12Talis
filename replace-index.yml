@@ -1,0 +1,49 @@
+name: Replace index.html from incoming/
+
+# วางไฟล์ HTML ใหม่ (ชื่ออะไรก็ได้ เช่น index (5).html) ไว้ในโฟลเดอร์ incoming/
+# ระบบจะนำไปแทนที่ index.html ให้อัตโนมัติ แล้วเว็บจะอัปเดตเอง
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "incoming/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Replace index.html with newest file in incoming/
+        id: pick
+        run: |
+          newest=$(ls -t incoming/*.html incoming/*.htm 2>/dev/null | head -n1 || true)
+          if [ -z "$newest" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No HTML file in incoming/"
+            exit 0
+          fi
+          cp "$newest" index.html
+          rm -f incoming/*.html incoming/*.htm
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit
+        if: steps.pick.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update index.html from incoming/" || exit 0
+          git push
+
+      - name: Trigger deploy
+        if: steps.pick.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
